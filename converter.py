@@ -6,100 +6,111 @@ import concurrent.futures
 import argparse
 import time
 
+class Converter:
+    def __init__(self, input_dir:str, output_dir:str, res:tuple, base_angle:tuple, fov:tuple, overlap:int=10, threads:int=4, exclude_h_angles:list=[], exclude_v_angles:list=[], sort_v:bool=False, test_mode:bool=False, test_count:int=1):
+        self.input_dir = input_dir
+        self.output_dir = output_dir
+        self.res = res
+        self.base_angle=base_angle
+        self.fov = fov
+        self.h_fov, self.v_fov = fov
+        self.threads = threads
+        self.overlap = overlap
+        self.exclude_h_angles = exclude_h_angles
+        self.exclude_v_angles = exclude_v_angles
+        self.sort_v = sort_v
+        self.test_mode = test_mode
+        self.test_count = test_count
+        self.start_time = time.time()
+        self.make_dir()
+        self.images=self.assign_images()
+        
 
-def sort_v_first(angles, exclude_h_angles):
-    high_cutoff = max(exclude_h_angles) if exclude_h_angles else 360
-    low_cutoff = min(exclude_h_angles) if exclude_h_angles else 0
+    def print_time_to_finish(self)->None:
+        end_time = time.time()
+        print(f"{round(end_time-self.start_time, 2)} seconds.")
 
-    sorted_v = sorted(
-        angles,
-        key=lambda angle: (angle[0], angle[1] - 360 if angle[0] > high_cutoff else (angle[0] if angle[0] < low_cutoff else 360))
-    )
-    return sorted_v
+    def sort_angles(self, angles:list)->list:
+        high_cutoff = max(self.exclude_h_angles) if self.exclude_h_angles else 360
+        low_cutoff = min(self.exclude_h_angles) if self.exclude_h_angles else 0
+        if(self.sort_v):
+            x=0
+            y=1
+        else:
+            x=1
+            y=0
+        return sorted(angles, key=lambda angle: (angle[x], angle[y] - 360 if angle[0] > high_cutoff else (angle[0] if angle[0] < low_cutoff else 360)))
 
-def sort_h_first(angles, exclude_h_angles):
-    high_cutoff = max(exclude_h_angles) if exclude_h_angles else 360
-    low_cutoff = min(exclude_h_angles) if exclude_h_angles else 0
-    sorted_h = sorted(
-        angles,
-        key=lambda angle: (angle[1], angle[0] - 360 if angle[0] > high_cutoff else (angle[0] if angle[0] < low_cutoff else 360))
-    )
-    return sorted_h 
+    def genrate_steps(self)->tuple:
+        h_step = self.h_fov * (1 - self.overlap / 100)
+        v_step = self.v_fov * (1 - self.overlap / 100)
+        return h_step, v_step
 
-def generate_viewing_angles(base_u, base_v, fov, overlap, sort_v, exclude_h_angles, exclude_v_angles, test_mode):
-    h_fov, v_fov = fov
-    h_step = h_fov * (1 - overlap / 100)
-    v_step = v_fov * (1 - overlap / 100)
-    horizontal_angles = np.arange(base_u, 360, h_step) % 360
-    vertical_start = max(-90, base_v - v_fov / 2)
-    vertical_end = 90
-    vertical_angles = np.arange(vertical_start, vertical_end + 1, v_step)
-    vertical_angles = np.clip(vertical_angles, -90, 90)
-    angles = [(h, v) for v in vertical_angles if v not in exclude_v_angles for h in horizontal_angles if h not in exclude_h_angles]  
-    angles += [(h, 90) for h in horizontal_angles if h not in exclude_h_angles if 90 not in exclude_v_angles]
-    if(sort_v):
-        angles = sort_v_first(angles, exclude_h_angles)
-    else:
-        angles = sort_h_first(angles, exclude_h_angles)
-    if(test_mode):
-        for index, (h_angle, v_angle) in enumerate(angles):
-            print(f"{index+1}: h:{h_angle} v:{v_angle}")
-    return angles
+    def print_test_angles(self)->None:
+        if(self.test_mode):
+            for index, (h_angle, v_angle) in enumerate(self.angles):
+                print(f"{index+1}: h:{h_angle} v:{v_angle}")
 
-def process_single_angle(filename, output_dir, res, fov, i, u_deg, v_deg, e_img):
-    p_img = py360convert.e2p(e_img, fov_deg=fov, u_deg=u_deg, v_deg=v_deg, out_hw=res)
-    formatted_i = f'{i+1:02d}'
-    output_filename = f'{os.path.splitext(filename)[0]}_perspective_{formatted_i}.png'
-    Image.fromarray(p_img).save(os.path.join(output_dir, output_filename))  
+    def generate_viewing_angles(self)->list:
+        h_step, v_step = self.genrate_steps()
+        base_u, base_v = self.base_angle
+        horizontal_angles = np.arange(base_u, 360, h_step) % 360
+        vertical_start = max(-90, base_v - self.v_fov / 2)
+        vertical_end = 90
+        vertical_angles = np.arange(vertical_start, vertical_end + 1, v_step)
+        arranged_vertical_angles = np.clip(vertical_angles, -90, 90)
+        angles = [(h, v) for v in arranged_vertical_angles if v not in self.exclude_v_angles for h in horizontal_angles if h not in self.exclude_h_angles]  
+        angles += [(h, 90) for h in horizontal_angles if h not in self.exclude_h_angles if 90 not in self.exclude_v_angles]
+        self.angles = self.sort_angles(angles)
 
+    def process_single_angle(self, filename:str, i:int, e_img)->None:
+        u_deg, v_deg = self.angles[i]
+        p_img = py360convert.e2p(e_img, fov_deg=self.fov, u_deg=u_deg, v_deg=v_deg, out_hw=self.res)
+        formatted_i = f'{i+1:02d}'
+        output_filename = f'{os.path.splitext(filename)[0]}_perspective_{formatted_i}.png'
+        Image.fromarray(p_img).save(os.path.join(self.output_dir, output_filename))  
 
-def generate_images(filename, output_dir, res, fov, viewing_angles, e_img, threads, test_mode):
-    if test_mode:      
-         with concurrent.futures.ThreadPoolExecutor(max_workers=threads) as executor:
-            futures = [executor.submit(process_single_angle, filename, output_dir, res, fov, i, u_deg, v_deg, e_img) 
-                       for i, (u_deg, v_deg) in enumerate(viewing_angles)]
-            concurrent.futures.wait(futures)
-    else:
-        for i, (u_deg, v_deg) in enumerate(viewing_angles):
-            process_single_angle(filename, output_dir, res, fov, i, u_deg, v_deg, e_img)
+    def generate_images(self, filename:str, e_img):
+        if self.test_mode:      
+             with concurrent.futures.ThreadPoolExecutor(max_workers=self.threads) as executor:
+                futures = [executor.submit(self.process_single_angle, filename, i, e_img) 
+                           for i, (u_deg, v_deg) in enumerate(self.angles)]
+                concurrent.futures.wait(futures)
+        else:
+            for i, (u_deg, v_deg) in enumerate(self.angles):
+                self.process_single_angle(filename, i, e_img)
+ 
+    def process_image(self, filename:str):
+        file_path = os.path.join(self.input_dir, filename)
+        e_img = np.array(Image.open(file_path))
+        self.generate_viewing_angles()
+        self.print_test_angles()
+        self.generate_images(filename, e_img)
+        print(f'Processed {filename}')
 
-    
-def process_image(filename, input_dir, output_dir, res, base_angle, fov, overlap, sort_v, exclude_h_angles, exclude_v_angles, test_mode, threads=0):
-    file_path = os.path.join(input_dir, filename)
-    e_img = np.array(Image.open(file_path))
-    base_u, base_v = base_angle
-    viewing_angles = generate_viewing_angles(base_u, base_v, fov, overlap, sort_v, exclude_h_angles, exclude_v_angles, test_mode)
-    generate_images(filename, output_dir, res, fov, viewing_angles, e_img, threads, test_mode)
-    print(f'Processed {filename}')
+    def make_dir(self):
+        if not os.path.exists(self.output_dir):
+            os.makedirs(self.output_dir)
 
+    def assign_images(self):
+        return [filename for filename in os.listdir(self.input_dir) if filename.endswith('.jpg')]
 
-def convert_and_save_perspective_images(input_dir, output_dir, res, base_angle, fov, threads, overlap, exclude_h_angles, exclude_v_angles, sort_v=False, test_mode=False, test_count=1):
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
-    start_time = time.time()
-
-    images = [filename for filename in os.listdir(input_dir) if filename.endswith('.jpg')]
-    
-    if test_mode:
-        images = images[:test_count]  # Take only the first 3 images if --test is specified
-        for filename in images:  # Iterate over each image
-            process_image(filename, input_dir, output_dir, res, base_angle, fov, overlap, sort_v, exclude_h_angles, exclude_v_angles, test_mode, threads)
-
-    else:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=threads) as executor:
-            futures = [executor.submit(process_image, filename, input_dir, output_dir, res, base_angle, fov, overlap, sort_v, exclude_h_angles, exclude_v_angles, test_mode) 
-                       for filename in images]
-            concurrent.futures.wait(futures)
-
-    end_time = time.time()
-    print(f"{end_time-start_time} seconds.")
-
-
+    def init_process(self):
+        if self.test_mode:
+            images = self.images[:self.test_count] 
+            for filename in images: 
+                self.process_image(filename)
+        else:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=self.threads) as executor:
+                futures = [executor.submit(self.process_image, filename) 
+                           for filename in self.images]
+                concurrent.futures.wait(futures)
+        
 def main():
     parser = argparse.ArgumentParser(description='Convert 360 images to perspective views.')
     parser.add_argument('-i', '--input_directory', required=True, help='Input directory containing 360 images.')
     parser.add_argument('-o', '--output_directory', required=True, help='Output directory for perspective images.')
-    parser.add_argument('--start_angle', nargs=2, type=int, default=(0, 0), help='Base viewing angle for output images (u, v).')
+    parser.add_argument('--base_angle', nargs=2, type=int, default=(0, 0), help='Base viewing angle for output images (u, v).')
     parser.add_argument('--res', nargs=2, type=int, default=(800, 800), help='Output height and width of the images.')
     parser.add_argument('--fov', nargs=2, type=float, default=(100, 100), help='Field of view in degrees (horizontal, vertical).')
     parser.add_argument('--threads', type=int, default=10, help='Maximum number of worker threads.')
@@ -112,7 +123,9 @@ def main():
     args = parser.parse_args()
     exclude_h_angles = [float(angle.strip()) for angle in args.exclude_h_angles.split(',') if angle.strip()] if args.exclude_h_angles else []
     exclude_v_angles = [float(angle.strip()) for angle in args.exclude_v_angles.split(',') if angle.strip()] if args.exclude_v_angles else []
-    convert_and_save_perspective_images(args.input_directory, args.output_directory, tuple(args.res), tuple(args.start_angle), tuple(args.fov), args.threads, args.overlap, exclude_h_angles, exclude_v_angles, args.sort_v, args.test, args.test_count)
+    converter = Converter(args.input_directory, args.output_directory, tuple(args.res), tuple(args.base_angle), tuple(args.fov), args.overlap, args.threads, exclude_h_angles, exclude_v_angles, args.sort_v, args.test, args.test_count)
+    converter.init_process()
+    converter.print_time_to_finish()
 
 if __name__ == '__main__':
     main()
