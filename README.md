@@ -28,15 +28,15 @@ python converter.py --input_directory "path/to/input" --output_directory "path/t
 ```
 
 # Parameters
--i, --input_directory: Input directory containing 360 images.
--o, --output_directory: Output directory for perspective images.
---start_angle: Base viewing angle for output images (u, v).
---res: Output height and width of the images.
---fov: Field of view in degrees (horizontal, vertical).
---threads: Maximum number of worker threads.
---overlap: The overlaps parameter between images min 0, max 100.
---exclude_h_angles: Comma-separated list of horizontal angles to exclude.
---exclude_v_angles: Comma-separated list of vertical angles to exclude.
---sort_v: If specified, sort images vertically.
---test: If specified, process only the first image.
---test_count: If specified, process the specified number of frames.
+- -i, --input_directory: Input directory containing 360 images.
+- -o, --output_directory: Output directory for perspective images.
+- --start_angle: Base viewing angle for output images (u, v).
+- --res: Output height and width of the images.
+- --fov: Field of view in degrees (horizontal, vertical).
+- --threads: Maximum number of worker threads.
+- --overlap: The overlaps parameter between images min 0, max 100.
+- --exclude_h_angles: Comma-separated list of horizontal angles to exclude.
+- --exclude_v_angles: Comma-separated list of vertical angles to exclude.
+- --sort_v: If specified, sort images vertically.
+- --test: If specified, process only the first image.
+- --test_count: If specified, process the specified number of frames.
