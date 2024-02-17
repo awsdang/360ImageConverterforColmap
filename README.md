@@ -21,11 +21,34 @@ pip install -r requirements.txt
 ```
 
 # Usage
-Run the script from the command line, specifying the necessary parameters. Here is an example command:
 
+**Basic Usage**
+To use the 360 Image Converter for Colmap, start by running the script with your specified input and output directories. This basic command line example sets up the directories for processing:
 ```
-python converter.py --input_directory "path/to/input" --output_directory "path/to/output"
+python converter.py -i "path/to/input" -o "path/to/output"
 ```
+
+**Testing Mode**
+Before processing a large batch of images, you might want to run the script in test mode. This mode processes only the first image (or a specified number of images) and provides valuable information on the viewing angles generated. This is particularly useful for identifying specific angles you may want to exclude in the final batch process.
+Enable test mode by adding the --test flag. Optionally, specify the number of frames to process in test mode with --test_count:
+```
+python converter.py -i "path/to/input" -o "path/to/output" --test --test_count 5
+```
+
+**Excluding Specific Angles**
+Based on the output from the test mode, you might identify certain horizontal (H) or vertical (V) angles that you prefer not to include in your final output. Use the --exclude_h_angles and --exclude_v_angles parameters to exclude these angles. Specify the angles as comma-separated values:
+```
+python converter.py -i "path/to/input" -o "path/to/output" --exclude_h_angles '45,135' --exclude_v_angles '-45,-135'
+```
+
+
+**Full Command with All Options**
+To fully utilize the script with all customizable options, your command might look like this:
+```
+python converter.py -i "path/to/input" -o "path/to/output" -res 800 800 --base_angle -10 10 --fov 95 --threads 16 --overlap 5 --exclude_h_angles '45,135' --exclude_v_angles '-45,-135' --sort_v
+```
+This command sets custom resolutions to 800x800, base angles to be H:-10,V:10 , fields of view to 95, thread counts for multithreading to 16, overlap percentages to 5%, excluded angles H: 45 and 135 V: -45 and -135, and an option to start sorting images vertically instead of horizontally.
+
 
 # Parameters
 - -i, --input_directory: Input directory containing 360 images.
